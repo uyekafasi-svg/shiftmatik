@@ -363,7 +363,8 @@ async function handleLogin(e){
    if(err)err.textContent='';
  }catch(error){
    console.error('Shiftmatik login:',error);
-   if(err)err.textContent='Kullanıcı adı veya PIN hatalı.';
+   const msg=(error&&error.message)?error.message:'Bilinmeyen giriş hatası.';
+   if(err)err.textContent='Supabase: '+msg;
    document.getElementById('loginPin')?.select();
  }finally{
    if(btn){btn.disabled=false;btn.textContent='Giriş Yap';}
