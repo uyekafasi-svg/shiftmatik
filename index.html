@@ -1571,9 +1571,8 @@ function saveNewStaff(){
   }
   const p={id:uid(),name,skills:[...(window.newStaffSkills||[])],flags:window.newStaffFlag?['⚖️']:[],leave:false};
   data.staff.push(p);
-  localStorage.setItem('shiftmatik_staff',JSON.stringify(data.staff));
   document.getElementById('staffAddOverlay')?.classList.remove('show');
-  renderAll();
+  saveData();
 }
 function renderStaffEditor(){
  const root=document.getElementById('staffEditor');
