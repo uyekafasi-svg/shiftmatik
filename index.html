@@ -367,6 +367,9 @@ const SUPABASE_URL='https://ceoycckmwhqjiatqluij.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_jev9vTX_bS8BRPq8jttA7Q_EuXHNCZ3';
 const supabaseClient = window.supabase?.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 let currentUser=null;
+let cloudLoadedUserId=null;
+let cloudSyncInProgress=false;
+let cloudSyncQueued=false;
 function isLoggedIn(){ return !!currentUser; }
 function showLogin(){
  const o=document.getElementById('loginOverlay'); if(o)o.classList.remove('hidden');
@@ -509,12 +512,19 @@ async function initLogin(){
  try{
    const {data}=await supabaseClient.auth.getSession();
    currentUser=data?.session?.user||null;
-   if(currentUser) document.getElementById('loginOverlay')?.classList.add('hidden');
-   else showLogin();
-   supabaseClient.auth.onAuthStateChange((_event,session)=>{
+   if(currentUser){
+     document.getElementById('loginOverlay')?.classList.add('hidden');
+     await loadCloudState();
+   }else showLogin();
+   supabaseClient.auth.onAuthStateChange(async (_event,session)=>{
      currentUser=session?.user||null;
-     if(currentUser)document.getElementById('loginOverlay')?.classList.add('hidden');
-     else showLogin();
+     if(currentUser){
+       document.getElementById('loginOverlay')?.classList.add('hidden');
+       if(cloudLoadedUserId!==currentUser.id) await loadCloudState();
+     }else{
+       cloudLoadedUserId=null;
+       showLogin();
+     }
    });
  }catch(error){
    console.error('Shiftmatik session:',error);
@@ -675,7 +685,209 @@ data.templates=data.templates.map(t=>({
 }));
 
 function uid(){return Date.now()+Math.random().toString(16).slice(2)}
-function saveData(){localStorage.setItem('shiftmatik_staff',JSON.stringify(data.staff));localStorage.setItem('shiftmatik_templates',JSON.stringify(data.templates));data.branchDays[data.activeBranchId]=data.days;saveBranches();renderAll()}
+
+function cloudWeekStart(){
+ const d=new Date();
+ const day=d.getDay();
+ const diff=day===0?-6:1-day;
+ d.setHours(0,0,0,0); d.setDate(d.getDate()+diff);
+ return d.toISOString().slice(0,10);
+}
+function cloudErr(label,error){
+ if(error) console.error('Shiftmatik cloud '+label+':',error);
+}
+async function cloudLoadTable(table,queryFn){
+ const q=queryFn();
+ const {data:rows,error}=await q;
+ if(error) throw error;
+ return rows||[];
+}
+async function loadCloudState(){
+ if(!supabaseClient||!currentUser)return;
+ try{
+   const oldBranches=Array.isArray(data.branches)?data.branches.map(b=>({...b})):[];
+   const oldActiveBranchId=data.activeBranchId;
+   const oldBranchDays=JSON.parse(JSON.stringify(data.branchDays||{}));
+   const oldStaff=Array.isArray(data.staff)?data.staff.map(p=>({...p})):[];
+   const oldTemplates=Array.isArray(data.templates)?data.templates.map(t=>({...t})):[];
+   // Branches: cloud is authoritative once it has data; otherwise migrate local seed.
+   let branches=await cloudLoadTable('branches',()=>supabaseClient.from('branches').select('id,name,created_at').order('created_at',{ascending:true}));
+   if(!branches.length){
+     const seed=(data.branches||[]).map(b=>({name:b.name}));
+     if(seed.length){
+       const r=await supabaseClient.from('branches').insert(seed).select('id,name,created_at');
+       if(r.error)throw r.error;
+       branches=r.data||[];
+     }
+   }
+   if(branches.length){
+     const mapped=branches.map(b=>({id:String(b.id),name:b.name}));
+     const newByName=new Map(mapped.map(b=>[String(b.name).trim().toLocaleLowerCase('tr-TR'),b.id]));
+     const branchIdMap=new Map();
+     for(const old of oldBranches){
+       const newId=newByName.get(String(old.name).trim().toLocaleLowerCase('tr-TR'));
+       if(newId)branchIdMap.set(String(old.id),String(newId));
+     }
+     const remappedDays={};
+     for(const [oldId,days] of Object.entries(oldBranchDays)) remappedDays[branchIdMap.get(String(oldId))||String(oldId)]=days;
+     data.branchDays=remappedDays;
+     data.branches=mapped;
+     const activeMapped=branchIdMap.get(String(oldActiveBranchId));
+     data.activeBranchId=activeMapped || String(mapped[0].id);
+     if(oldTemplates.length){
+       data.templates=oldTemplates.map(t=>({...t,branchIds:(t.branchIds||mapped.map(b=>b.id)).map(id=>branchIdMap.get(String(id))||String(id))}));
+     }
+   }
+
+   // Staff: migrate local staff once if table is empty; afterwards cloud is authoritative.
+   let staff=await cloudLoadTable('staff',()=>supabaseClient.from('staff').select('id,name,skills,flags,special,created_at').order('created_at',{ascending:true}));
+   if(!staff.length && Array.isArray(data.staff) && data.staff.length){
+     const seed=data.staff.map(p=>({name:p.name,skills:p.skills||[],flags:p.flags||[],special:!!p.special}));
+     const r=await supabaseClient.from('staff').insert(seed).select('id,name,skills,flags,special,created_at');
+     if(r.error)throw r.error;
+     staff=r.data||[];
+   }
+   if(staff.length){
+     const staffByName=new Map(staff.map(p=>[String(p.name).trim().toLocaleLowerCase('tr-TR'),String(p.id)]));
+     const staffIdMap=new Map();
+     for(const old of oldStaff){
+       const newId=staffByName.get(String(old.name).trim().toLocaleLowerCase('tr-TR'));
+       if(newId)staffIdMap.set(String(old.id),String(newId));
+     }
+     for(const days of Object.values(data.branchDays||{})){
+       (days||[]).forEach(d=>(d.slots||[]).forEach(slot=>{if(slot.personId!=null)slot.personId=staffIdMap.get(String(slot.personId))||String(slot.personId);}));
+     }
+     data.staff=staff.map(p=>({id:String(p.id),name:p.name,skills:Array.isArray(p.skills)?p.skills:[],flags:Array.isArray(p.flags)?p.flags:[],special:!!p.special,leave:false}));
+   }
+
+   // Templates: migrate local templates once if table is empty.
+   let dbTemplates=await cloudLoadTable('templates',()=>supabaseClient.from('templates').select('id,name,branch_ids,days,created_at,updated_at').order('created_at',{ascending:true}));
+   if(!dbTemplates.length && Array.isArray(data.templates) && data.templates.length){
+     const validBranchIds=data.branches.map(b=>String(b.id));
+     const seed=data.templates.map(t=>({name:t.name,branch_ids:(t.branchIds||validBranchIds).map(String),days:t.days||[]}));
+     const r=await supabaseClient.from('templates').insert(seed).select('id,name,branch_ids,days,created_at,updated_at');
+     if(r.error)throw r.error;
+     dbTemplates=r.data||[];
+   }
+   if(dbTemplates.length){
+     data.templates=dbTemplates.map(t=>({id:String(t.id),name:t.name,branchIds:(t.branch_ids||[]).map(String),days:Array.isArray(t.days)?t.days:[]}));
+   }
+
+   // Weekly plans + slots for current week.
+   const week=cloudWeekStart();
+   const plans=await cloudLoadTable('weekly_plans',()=>supabaseClient.from('weekly_plans').select('id,branch_id,week_start').eq('week_start',week));
+   const planIds=plans.map(p=>p.id);
+   let slots=[];
+   if(planIds.length){
+     slots=await cloudLoadTable('shift_slots',()=>supabaseClient.from('shift_slots').select('id,weekly_plan_id,day,time,role,staff_id,special,sort_order').in('weekly_plan_id',planIds).order('sort_order',{ascending:true}));
+   }
+   const byBranch={};
+   for(const plan of plans){
+     const rows=slots.filter(s=>String(s.weekly_plan_id)===String(plan.id));
+     const grouped={};
+     rows.forEach(s=>{
+       const k=String(s.day||'');
+       (grouped[k] ||= []).push({id:String(s.id),time:s.time||'',role:s.role||'',personId:s.staff_id?String(s.staff_id):null,special:!!s.special});
+     });
+     byBranch[String(plan.branch_id)]=Object.entries(grouped).map(([name,ss])=>({name,slots:ss}));
+   }
+   data.branchDays=byBranch;
+   data.days=data.branchDays[String(data.activeBranchId)]||[];
+   localStorage.setItem('shiftmatik_staff',JSON.stringify(data.staff));
+   localStorage.setItem('shiftmatik_templates',JSON.stringify(data.templates));
+   saveBranches();
+   cloudLoadedUserId=currentUser.id;
+   renderAll();
+ }catch(error){
+   cloudErr('load',error);
+   toast('Bulut verileri yüklenemedi: '+(error?.message||'Bilinmeyen hata'));
+ }
+}
+async function syncCloudState(){
+ if(!supabaseClient||!currentUser||cloudSyncInProgress){
+   if(cloudSyncInProgress)cloudSyncQueued=true;
+   return;
+ }
+ cloudSyncInProgress=true;
+ try{
+   // Branches
+   let dbBranches=await cloudLoadTable('branches',()=>supabaseClient.from('branches').select('id,name'));
+   const dbByName=new Map(dbBranches.map(b=>[String(b.name).trim().toLocaleLowerCase('tr-TR'),String(b.id)]));
+   for(const b of data.branches){
+     if(!String(b.id).match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)){
+       const existingId=dbByName.get(String(b.name).trim().toLocaleLowerCase('tr-TR'));
+       if(existingId){b.id=existingId;}
+       else{
+         const r=await supabaseClient.from('branches').insert({name:b.name}).select('id,name').single();
+         if(r.error)throw r.error;b.id=String(r.data.id);dbByName.set(String(b.name).trim().toLocaleLowerCase('tr-TR'),b.id);
+       }
+     }else{
+       const r=await supabaseClient.from('branches').upsert({id:b.id,name:b.name},{onConflict:'id'});if(r.error)throw r.error;
+     }
+   }
+   data.activeBranchId=String(data.activeBranchId);
+
+   // Staff IDs must be UUIDs for the cloud schema.
+   let dbStaff=await cloudLoadTable('staff',()=>supabaseClient.from('staff').select('id,name'));
+   const dbStaffByName=new Map(dbStaff.map(p=>[String(p.name).trim().toLocaleLowerCase('tr-TR'),String(p.id)]));
+   for(const p of data.staff){
+     const nameKey=String(p.name).trim().toLocaleLowerCase('tr-TR');
+     if(!String(p.id).match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)){
+       const existingId=dbStaffByName.get(nameKey);
+       if(existingId)p.id=existingId;
+       else{
+         const r=await supabaseClient.from('staff').insert({name:p.name,skills:p.skills||[],flags:p.flags||[],special:!!p.special}).select('id').single();
+         if(r.error)throw r.error;p.id=String(r.data.id);dbStaffByName.set(nameKey,p.id);
+       }
+     }else{
+       const r=await supabaseClient.from('staff').upsert({id:p.id,name:p.name,skills:p.skills||[],flags:p.flags||[],special:!!p.special},{onConflict:'id'});if(r.error)throw r.error;
+     }
+   }
+
+   // Templates
+   let dbTemps=await cloudLoadTable('templates',()=>supabaseClient.from('templates').select('id,name'));
+   const dbTempByName=new Map(dbTemps.map(t=>[String(t.name),String(t.id)]));
+   for(const t of data.templates){
+     if(!String(t.id).match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)){
+       const existingId=dbTempByName.get(String(t.name));
+       if(existingId)t.id=existingId;
+       else{
+         const r=await supabaseClient.from('templates').insert({name:t.name,branch_ids:(t.branchIds||data.branches.map(b=>b.id)).map(String),days:t.days||[]}).select('id').single();
+         if(r.error)throw r.error;t.id=String(r.data.id);dbTempByName.set(String(t.name),t.id);
+       }
+     }else{
+       const r=await supabaseClient.from('templates').upsert({id:t.id,name:t.name,branch_ids:(t.branchIds||data.branches.map(b=>b.id)).map(String),days:t.days||[],updated_at:new Date().toISOString()},{onConflict:'id'});if(r.error)throw r.error;
+     }
+   }
+
+   // Save each branch's current-week plan. Small app: replace slots atomically at the app level.
+   const week=cloudWeekStart();
+   for(const b of data.branches){
+     const days=data.branchDays[String(b.id)]||[];
+     let plan=(await supabaseClient.from('weekly_plans').select('id').eq('branch_id',b.id).eq('week_start',week).maybeSingle());
+     let planId=plan.data?.id;
+     if(plan.error)throw plan.error;
+     if(!planId){
+       const r=await supabaseClient.from('weekly_plans').insert({branch_id:b.id,week_start:week}).select('id').single();
+       if(r.error)throw r.error;planId=r.data.id;
+     }
+     const del=await supabaseClient.from('shift_slots').delete().eq('weekly_plan_id',planId);if(del.error)throw del.error;
+     const rows=[];
+     days.forEach((d,di)=>(d.slots||[]).forEach((s,si)=>rows.push({weekly_plan_id:planId,day:d.name||'',time:s.time||'',role:s.role||'',staff_id:s.personId||null,special:!!s.special,sort_order:di*1000+si})));
+     if(rows.length){const ins=await supabaseClient.from('shift_slots').insert(rows);if(ins.error)throw ins.error;}
+   }
+   localStorage.setItem('shiftmatik_staff',JSON.stringify(data.staff));
+   localStorage.setItem('shiftmatik_templates',JSON.stringify(data.templates));
+   saveBranches();
+ }catch(error){
+   cloudErr('save',error);
+   toast('Buluta kaydedilemedi: '+(error?.message||'Bilinmeyen hata'));
+ }finally{
+   cloudSyncInProgress=false;
+   if(cloudSyncQueued){cloudSyncQueued=false;syncCloudState();}
+ }
+}
+function saveData(){localStorage.setItem('shiftmatik_staff',JSON.stringify(data.staff));localStorage.setItem('shiftmatik_templates',JSON.stringify(data.templates));data.branchDays[data.activeBranchId]=data.days;saveBranches();renderAll();if(currentUser)syncCloudState();}
 function toast(s){const t=document.getElementById('toast');t.textContent=s;t.style.display='block';setTimeout(()=>t.style.display='none',2200)}
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function roleLabel(r){return r.toUpperCase()}
