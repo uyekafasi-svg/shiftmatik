@@ -353,8 +353,13 @@ async function handleLogin(e){
  try{
    const {data:emailData,error:emailError}=await supabaseClient.rpc('get_login_email',{p_username:u});
    if(emailError)throw emailError;
-   const email=typeof emailData==='string'?emailData:null;
-   if(!email)throw new Error('Kullanıcı adı veya PIN hatalı.');
+   // Supabase/PostgREST sürümüne göre RPC sonucu scalar, obje veya tek elemanlı dizi gelebilir.
+   const email = typeof emailData==='string'
+     ? emailData.trim()
+     : Array.isArray(emailData)
+       ? String(emailData[0]?.email ?? emailData[0] ?? '').trim()
+       : String(emailData?.email ?? '').trim();
+   if(!email)throw new Error('Kullanıcı adı bulunamadı (RPC mail sonucu boş).');
    const {data:authData,error:authError}=await supabaseClient.auth.signInWithPassword({email,password:p});
    if(authError)throw authError;
    currentUser=authData.user||null;
