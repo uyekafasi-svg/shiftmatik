@@ -463,15 +463,14 @@ async function createShiftmatikUser(){
  if(exists.data){if(err)err.textContent='Bu kullanıcı adı zaten kullanılıyor.';return;}
  const btn=document.querySelector('#userAddOverlay .primary'); if(btn){btn.disabled=true;btn.textContent='Oluşturuluyor…';}
  try{
-   // Separate client keeps the currently logged-in user's session intact.
-   const isolated=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-   const email=slugForAuthEmail(name);
-   const {data:created,error:createError}=await isolated.auth.signUp({email,password:pass});
-   if(createError)throw createError;
-   if(!created?.user?.id)throw new Error('Auth kullanıcısı oluşturulamadı.');
-   if(!created.session)throw new Error('Kullanıcı oluşturuldu ancak Supabase e-posta doğrulaması açık. Shiftmatik kullanıcıları için Auth > Providers > Email bölümünde Confirm email ayarını kapatın ve tekrar deneyin.');
-   const {error:profileError}=await supabaseClient.from('profiles').insert({id:created.user.id,username:name,email,role:'admin'});
-   if(profileError)throw profileError;
+   // Kullanıcı oluşturma artık Edge Function üzerinden yapılır.
+   // Böylece Auth admin yetkisi ve rate-limit davranışı tarayıcıdan çıkar;
+   // service/secret key kesinlikle HTML'ye girmez.
+   const {data:fnData,error:fnError}=await supabaseClient.functions.invoke('create-shiftmatik-user',{
+     body:{username:name,password:pass}
+   });
+   if(fnError)throw fnError;
+   if(!fnData?.ok)throw new Error(fnData?.message||'Kullanıcı oluşturulamadı.');
    closeUserModal();
    await loadUsers();
  }catch(error){
