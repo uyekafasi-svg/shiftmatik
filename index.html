@@ -466,8 +466,13 @@ async function createShiftmatikUser(){
    // Kullanıcı oluşturma artık Edge Function üzerinden yapılır.
    // Böylece Auth admin yetkisi ve rate-limit davranışı tarayıcıdan çıkar;
    // service/secret key kesinlikle HTML'ye girmez.
+   const {data:sessionData,error:sessionError}=await supabaseClient.auth.getSession();
+   if(sessionError)throw sessionError;
+   const accessToken=sessionData?.session?.access_token;
+   if(!accessToken)throw new Error('Oturum bulunamadı. Lütfen tekrar giriş yapın.');
    const {data:fnData,error:fnError}=await supabaseClient.functions.invoke('create-shiftmatik-user',{
-     body:{username:name,password:pass}
+     body:{username:name,password:pass},
+     headers:{Authorization:`Bearer ${accessToken}`}
    });
    if(fnError)throw fnError;
    if(!fnData?.ok)throw new Error(fnData?.message||'Kullanıcı oluşturulamadı.');
