@@ -220,9 +220,22 @@ button{touch-action:manipulation;}
   }
 }
 @media (max-width:420px){
-  /* Tek sütun görünümde personel paneli günlerin altındadır; sticky uygulanmaz. */
-  .layout > aside.panel{position:static;max-height:none;overflow:hidden;}
-  .layout > aside.panel .panel-body{max-height:none;overflow:visible;}
+  /* Tek sütun görünümde personel paneli kendi içinde kaydırılabilir olsun. */
+  .layout > aside.panel{
+    position:static;
+    height:auto;
+    max-height:52vh;
+    overflow:hidden;
+  }
+  .layout > aside.panel .panel-body{
+    min-height:0;
+    max-height:calc(52vh - 44px);
+    overflow-y:auto;
+    overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    touch-action:pan-y;
+  }
 }
 </style>
 
