@@ -237,6 +237,10 @@ button{touch-action:manipulation;}
 }
 </style>
 
+
+<style id="settingsStyles">
+.settings-grid{display:grid;gap:8px;max-width:720px}.settings-card{overflow:hidden}.settings-body{padding:8px}.user-row{display:flex;align-items:center;gap:8px;padding:10px 4px;border-bottom:1px solid #f0f0f0}.user-row:last-child{border-bottom:0}.user-main{min-width:0;flex:1}.user-name{font-size:12px;font-weight:750}.user-meta{font-size:9px;color:#888;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.user-actions{display:flex;gap:5px;flex:0 0 auto}.user-actions button{font-size:9px;padding:7px 8px;border:1px solid var(--line);background:#fff;border-radius:8px}.user-actions .current{background:#f2f2f2}.user-modal-overlay{position:fixed;inset:0;background:#0006;display:none;align-items:center;justify-content:center;z-index:200;padding:16px}.user-modal-overlay.show{display:flex}.user-modal{width:min(380px,100%);background:#fff;border-radius:16px;padding:16px;box-shadow:0 18px 50px #0004}.user-modal h2{margin:0 0 14px;font-size:17px}.user-modal .field{margin-bottom:10px}.user-modal label{display:block;font-size:10px;color:#777;margin-bottom:4px}.user-modal input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:9px;padding:10px;font-size:16px;outline:none}.user-modal-error{min-height:18px;color:#b42318;font-size:11px;text-align:center;margin:5px 0}.user-modal-actions{display:flex;gap:7px;margin-top:12px}.user-modal-actions button{flex:1;padding:10px;font-size:11px;border:1px solid var(--line);border-radius:9px;background:#fff}.user-modal-actions .primary{background:#111;color:#fff;border-color:#111}
+</style>
 <style id="loginStyles">
 #loginOverlay{position:fixed;inset:0;z-index:99999;background:#f6f6f6;display:flex;align-items:center;justify-content:center;padding:20px;}
 #loginOverlay.hidden{display:none;}
@@ -259,7 +263,7 @@ button{touch-action:manipulation;}
     <p>Devam etmek için giriş yapın.</p>
     <form id="loginForm">
       <div class="login-field"><label for="loginUser">Kullanıcı</label><input id="loginUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Kullanıcı adı"></div>
-      <div class="login-field"><label for="loginPin">PIN</label><input id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" placeholder="PIN"></div>
+      <div class="login-field"><label for="loginPin">Şifre</label><input id="loginPin" type="password" autocomplete="current-password" placeholder="Şifre"></div>
       <button class="login-btn" type="button" onclick="return handleLogin(event)">Giriş Yap</button>
       <div id="loginError" class="login-error" aria-live="polite"></div>
     </form>
@@ -267,7 +271,7 @@ button{touch-action:manipulation;}
 </div>
 
 <header><div class="logo">Shiftmatik</div><div class="sub">V1 · Lokal prototip</div><div class="actions"><button class="primary" onclick="saveData()">Kaydet</button></div></header>
-<div class="tabs"><button class="tab active" data-tab="planner">Shift Planla</button><button class="tab" data-tab="staff">Personel</button><button class="tab" data-tab="templates">Şablonlar</button></div>
+<div class="tabs"><button class="tab active" data-tab="planner">Shift Planla</button><button class="tab" data-tab="staff">Personel</button><button class="tab" data-tab="templates">Şablonlar</button><button class="tab" data-tab="settings">⚙ Ayarlar</button></div>
 <div id="branchTabs" class="branch-tabs"></div>
 <main>
 <section id="planner" class="page">
@@ -287,7 +291,35 @@ button{touch-action:manipulation;}
 <div class="layout"><section id="days"></section><aside class="panel"><div class="panel-head"><strong>Personel</strong><button type="button" onclick="event.stopPropagation();addStaff()">+ Personel</button></div><div class="panel-body" id="staffList"></div></aside></div><div class="shift-actions"><button type="button" class="whatsapp-copy-btn" onclick="copyShift()">WhatsApp'a Kopyala</button></div>
 </section>
 <section id="staff" class="page hidden"><div class="toolbar"><h1>Personel Kadrosu</h1><button onclick="addStaff()">+ Personel Ekle</button></div><div class="staff-editor" id="staffEditor"></div></section>
-<section id="templates" class="page hidden"><div class="toolbar"><h1>Şablonlar</h1><button onclick="newTemplate()">+ Şablon</button></div><div class="template-grid" id="templateGrid"></div></section><div id="staffAddOverlay" class="staff-add-overlay" onclick="closeStaffAdd(event)">
+<section id="templates" class="page hidden"><div class="toolbar"><h1>Şablonlar</h1><button onclick="newTemplate()">+ Şablon</button></div><div class="template-grid" id="templateGrid"></div></section>
+<section id="settings" class="page hidden">
+  <div class="toolbar"><h1>Ayarlar</h1></div>
+  <div class="settings-grid">
+    <div class="panel settings-card">
+      <div class="panel-head"><strong>Kullanıcılar</strong><button type="button" onclick="openUserAdd()">+ Kullanıcı</button></div>
+      <div class="settings-body" id="userList"><div class="small">Yükleniyor…</div></div>
+    </div>
+  </div>
+</section>
+<div id="userAddOverlay" class="user-modal-overlay" onclick="closeUserModal(event)">
+  <div class="user-modal" onclick="event.stopPropagation()">
+    <h2 id="userModalTitle">Kullanıcı Ekle</h2>
+    <div class="field"><label>Kullanıcı adı</label><input id="userNameInput" type="text" autocomplete="off" placeholder="Örn. Mert"></div>
+    <div class="field"><label>Şifre</label><input id="userPasswordInput" type="password" autocomplete="new-password" placeholder="En az 4 karakter"></div>
+    <div class="field"><label>Şifre tekrar</label><input id="userPasswordConfirm" type="password" autocomplete="new-password" placeholder="Şifreyi tekrar yaz"></div>
+    <div id="userModalError" class="user-modal-error"></div>
+    <div class="user-modal-actions"><button type="button" onclick="closeUserModal()">Vazgeç</button><button type="button" class="primary" onclick="createShiftmatikUser()">Kaydet</button></div>
+  </div>
+</div>
+<div id="passwordOverlay" class="user-modal-overlay" onclick="closePasswordModal(event)">
+  <div class="user-modal" onclick="event.stopPropagation()">
+    <h2>Şifre Değiştir</h2>
+    <div class="field"><label>Yeni şifre</label><input id="newPasswordInput" type="password" autocomplete="new-password" placeholder="En az 4 karakter"></div>
+    <div class="field"><label>Yeni şifre tekrar</label><input id="newPasswordConfirm" type="password" autocomplete="new-password" placeholder="Şifreyi tekrar yaz"></div>
+    <div id="passwordModalError" class="user-modal-error"></div>
+    <div class="user-modal-actions"><button type="button" onclick="closePasswordModal()">Vazgeç</button><button type="button" class="primary" onclick="changeMyPassword()">Şifreyi Değiştir</button></div>
+  </div>
+</div><div id="staffAddOverlay" class="staff-add-overlay" onclick="closeStaffAdd(event)">
   <div class="staff-add-modal" onclick="event.stopPropagation()">
     <h2>Personel Ekle</h2>
     <div class="field">
@@ -375,6 +407,96 @@ async function handleLogin(e){
    if(btn){btn.disabled=false;btn.textContent='Giriş Yap';}
  }
  return false;
+}
+function openUserAdd(){
+ const o=document.getElementById('userAddOverlay'); if(!o)return;
+ document.getElementById('userNameInput').value='';
+ document.getElementById('userPasswordInput').value='';
+ document.getElementById('userPasswordConfirm').value='';
+ document.getElementById('userModalError').textContent='';
+ o.classList.add('show');
+ setTimeout(()=>document.getElementById('userNameInput')?.focus(),50);
+}
+function closeUserModal(e){
+ if(e && e.target!==e.currentTarget)return;
+ document.getElementById('userAddOverlay')?.classList.remove('show');
+}
+function openPasswordModal(){
+ const o=document.getElementById('passwordOverlay'); if(!o)return;
+ document.getElementById('newPasswordInput').value='';
+ document.getElementById('newPasswordConfirm').value='';
+ document.getElementById('passwordModalError').textContent='';
+ o.classList.add('show');
+ setTimeout(()=>document.getElementById('newPasswordInput')?.focus(),50);
+}
+function closePasswordModal(e){
+ if(e && e.target!==e.currentTarget)return;
+ document.getElementById('passwordOverlay')?.classList.remove('show');
+}
+function slugForAuthEmail(name){
+ const base=String(name||'kullanici').toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/ı/g,'i').replace(/[^a-z0-9]+/g,'.').replace(/^\.|\.$/g,'')||'kullanici';
+ return `${base}.${Date.now()}@shiftmatik.local`;
+}
+async function loadUsers(){
+ const el=document.getElementById('userList');
+ if(!el)return;
+ if(!supabaseClient || !currentUser){el.innerHTML='<div class="small">Oturum gerekli.</div>';return;}
+ const {data:rows,error}=await supabaseClient.from('profiles').select('id,username,email,role,created_at').order('username',{ascending:true});
+ if(error){console.error('Shiftmatik users:',error);el.innerHTML=`<div class="user-modal-error">Kullanıcılar alınamadı: ${esc(error.message||'Bilinmeyen hata')}</div>`;return;}
+ if(!rows?.length){el.innerHTML='<div class="small">Henüz kullanıcı yok.</div>';return;}
+ el.innerHTML=rows.map(u=>{
+   const me=String(u.id)===String(currentUser.id);
+   return `<div class="user-row"><div class="user-main"><div class="user-name">${esc(u.username)}${me?' <span class="small">(sen)</span>':''}</div><div class="user-meta">${me?'Kendi hesabın':'Shiftmatik kullanıcısı'}</div></div><div class="user-actions">${me?'<button type="button" onclick="openPasswordModal()">Şifre Değiştir</button>':''}</div></div>`;
+ }).join('');
+}
+async function createShiftmatikUser(){
+ const err=document.getElementById('userModalError');
+ const name=(document.getElementById('userNameInput')?.value||'').trim();
+ const pass=document.getElementById('userPasswordInput')?.value||'';
+ const confirm=document.getElementById('userPasswordConfirm')?.value||'';
+ if(err)err.textContent='';
+ if(!name){if(err)err.textContent='Kullanıcı adı gerekli.';return;}
+ if(pass.length<4){if(err)err.textContent='Şifre en az 4 karakter olmalı.';return;}
+ if(pass!==confirm){if(err)err.textContent='Şifreler aynı değil.';return;}
+ const exists=await supabaseClient.from('profiles').select('id').ilike('username',name).maybeSingle();
+ if(exists.error){if(err)err.textContent=exists.error.message;return;}
+ if(exists.data){if(err)err.textContent='Bu kullanıcı adı zaten kullanılıyor.';return;}
+ const btn=document.querySelector('#userAddOverlay .primary'); if(btn){btn.disabled=true;btn.textContent='Oluşturuluyor…';}
+ try{
+   // Separate client keeps the currently logged-in user's session intact.
+   const isolated=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+   const email=slugForAuthEmail(name);
+   const {data:created,error:createError}=await isolated.auth.signUp({email,password:pass});
+   if(createError)throw createError;
+   if(!created?.user?.id)throw new Error('Auth kullanıcısı oluşturulamadı.');
+   if(!created.session)throw new Error('Kullanıcı oluşturuldu ancak Supabase e-posta doğrulaması açık. Shiftmatik kullanıcıları için Auth > Providers > Email bölümünde Confirm email ayarını kapatın ve tekrar deneyin.');
+   const {error:profileError}=await supabaseClient.from('profiles').insert({id:created.user.id,username:name,email,role:'admin'});
+   if(profileError)throw profileError;
+   closeUserModal();
+   await loadUsers();
+ }catch(error){
+   console.error('Shiftmatik create user:',error);
+   if(err)err.textContent=error?.message||'Kullanıcı oluşturulamadı.';
+ }finally{
+   if(btn){btn.disabled=false;btn.textContent='Kaydet';}
+ }
+}
+async function changeMyPassword(){
+ const err=document.getElementById('passwordModalError');
+ const pass=document.getElementById('newPasswordInput')?.value||'';
+ const confirm=document.getElementById('newPasswordConfirm')?.value||'';
+ if(err)err.textContent='';
+ if(pass.length<4){if(err)err.textContent='Şifre en az 4 karakter olmalı.';return;}
+ if(pass!==confirm){if(err)err.textContent='Şifreler aynı değil.';return;}
+ try{
+   const {error}=await supabaseClient.auth.updateUser({password:pass});
+   if(error)throw error;
+   closePasswordModal();
+   toast('Şifren değiştirildi.');
+ }catch(error){
+   console.error('Shiftmatik password:',error);
+   if(err)err.textContent=error?.message||'Şifre değiştirilemedi.';
+ }
 }
 async function initLogin(){
  const form=document.getElementById('loginForm');
@@ -1528,6 +1650,8 @@ function renderActiveTab(tabName){
     renderBranchTabs();
     renderSelect();
     renderPlanner();
+  }else if(tabName==='settings'){
+    loadUsers();
   }
 }
 
@@ -1625,5 +1749,5 @@ selectedSlot=null;selectedStaffId=null;
 saveBranches();
 renderAll();
 initLogin();
-document.addEventListener('keydown',e=>{if(e.key==='Escape')document.getElementById('branchModalOverlay')?.classList.remove('show');if(e.key==='Enter'&&document.getElementById('branchModalOverlay')?.classList.contains('show'))saveBranchEditor();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.getElementById('branchModalOverlay')?.classList.remove('show');document.getElementById('userAddOverlay')?.classList.remove('show');document.getElementById('passwordOverlay')?.classList.remove('show');}if(e.key==='Enter'&&document.getElementById('branchModalOverlay')?.classList.contains('show'))saveBranchEditor();if(e.key==='Enter'&&document.getElementById('userAddOverlay')?.classList.contains('show'))createShiftmatikUser();if(e.key==='Enter'&&document.getElementById('passwordOverlay')?.classList.contains('show'))changeMyPassword();});
 </script></body></html>
