@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "Shiftmatik",
+  "short_name": "Shiftmatik",
+  "lang": "tr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f1e6cd",
+  "theme_color": "#ed5529",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
